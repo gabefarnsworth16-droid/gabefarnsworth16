@@ -1,0 +1,827 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Tower Defense Soccer: The Playmaker Protocol</title>
+    <style>
+        body {
+            background: #050505; color: #eee;
+            font-family: 'Segoe UI', system-ui, sans-serif;
+            display: flex; flex-direction: column; align-items: center;
+            margin: 0; overflow: hidden; user-select: none;
+        }
+        #game-wrapper { position: relative; margin-top: 5px; }
+        .overlay {
+            position: absolute; top: 0; left: 0; width: 950px; height: 600px;
+            background: rgba(0,0,0,0.95); display: flex; flex-direction: column;
+            justify-content: center; align-items: center; z-index: 100;
+            border-radius: 12px; text-align: center;
+        }
+        #goal-overlay { background: rgba(0,0,0,0.7); z-index: 110; pointer-events: none; }
+        .hidden { display: none !important; }
+        .btn {
+            margin-top: 15px; padding: 12px 40px; font-size: 1.2rem;
+            background: #2e7d32; color: white; border: none; border-radius: 8px;
+            cursor: pointer; font-weight: bold; transition: 0.2s;
+        }
+        .btn-yellow { background: #fbc02d; color: black; }
+        .btn:hover { filter: brightness(1.2); transform: scale(1.05); }
+        .team-select-box { display: flex; gap: 20px; margin-bottom: 20px; }
+        .team-btn { 
+            padding: 15px 30px; font-weight: bold; border-radius: 8px; cursor: pointer; border: 3px solid transparent; 
+        }
+        .select-red { background: #b71c1c; color: white; }
+        .select-blue { background: #0d47a1; color: white; }
+        .team-btn.active { border-color: white; box-shadow: 0 0 15px white; }
+
+        /* Instructions Screen */
+        #menu-instructions { justify-content: flex-start; padding: 20px 0; overflow-y: auto; z-index: 200; }
+        .inst-content { width: 80%; text-align: left; padding: 20px; line-height: 1.6; color: white; }
+        .inst-content h2 { color: #448aff; border-bottom: 1px solid #444; padding-bottom: 5px; margin-top: 25px; }
+
+        #ui-top { display: flex; justify-content: space-between; width: 950px; margin-top: 5px; align-items: center;}
+        .gold-tag { padding: 6px 12px; border-radius: 4px; font-weight: bold; background: #222; border: 1px solid #444; min-width: 100px; text-align: center;}
+        
+        #score-bug {
+            background: #1a1a1a; padding: 5px 25px; border-radius: 6px; border: 2px solid #444;
+            display: flex; align-items: center; gap: 20px; font-weight: 900; font-size: 1.8rem;
+        }
+        #clock-display { font-family: 'Courier New', Courier, monospace; color: #ffeb3b; min-width: 120px; text-align: center; }
+
+        canvas { background: #163d1b; display: block; border: 4px solid #333; border-radius: 12px; }
+        .shop {
+            background: #111; padding: 10px; width: 950px;
+            display: flex; justify-content: center; gap: 6px; flex-wrap: wrap;
+            border-bottom-left-radius: 12px; border-bottom-right-radius: 12px; border-top: 2px solid #333;
+        }
+        .shop button {
+            padding: 8px 12px; cursor: pointer; background: #333; color: #fff;
+            border: 1px solid #444; border-radius: 4px; font-weight: bold; font-size: 0.75rem;
+            transition: all 0.2s ease;
+        }
+        .shop button.active-blue { background: #0d47a1 !important; border-color: #fff; box-shadow: 0 0 10px #448aff; }
+        .shop button.active-red { background: #b71c1c !important; border-color: #fff; box-shadow: 0 0 10px #ff5252; }
+        .shop button.afford { opacity: 1; filter: grayscale(0); }
+        .shop button.broke { opacity: 0.4; filter: grayscale(1); }
+        .shop button.limit-reached { opacity: 0.3; filter: grayscale(1); cursor: not-allowed; }
+    </style>
+</head>
+<body>
+
+    <div id="ui-top">
+        <div class="gold-tag" id="tag-red" style="color: #ff5252;">RED: $<span id="red-gold">150</span></div>
+        <div id="score-bug">
+            <span style="color: #ff5252;">RED</span> <span id="bug-red-score">0</span>
+            <span style="color: #555;">-</span>
+            <span id="bug-blue-score">0</span> <span style="color: #448aff;">BLUE</span>
+            <div id="clock-display">00:00</div>
+        </div>
+        <div class="gold-tag" id="tag-blue" style="color: #448aff;">BLUE: $<span id="blue-gold">150</span></div>
+    </div>
+
+    <div id="game-wrapper">
+        <div id="menu-start" class="overlay">
+            <h1 style="color: #448aff; font-size: 3.5rem;">TOWER DEFENSE SOCCER</h1>
+            <p>Select your team. Prepare your defenses.</p>
+            <div class="team-select-box">
+                <div class="team-btn select-red" id="pick-red" onclick="selectTeam('red')">PLAY AS RED</div>
+                <div class="team-btn select-blue active" id="pick-blue" onclick="selectTeam('blue')">PLAY AS BLUE</div>
+            </div>
+            <button class="btn" onclick="initGame()">KICK OFF</button>
+            <button class="btn btn-yellow" onclick="showInstructions()">INSTRUCTIONS</button>
+        </div>
+
+        <div id="menu-instructions" class="overlay hidden">
+            <button class="btn" style="position: absolute; top: 10px; left: 20px; margin: 0;" onclick="hideInstructions()">BACK</button>
+            <h1 style="color: #ffeb3b; margin-top: 20px;">INSTRUCTIONS</h1>
+            <div class="inst-content">
+                <h2>RULES & MECHANICS</h2>
+                <p>Manage your gold to build towers and outscore your opponent in a 90-minute (4 real minutes) soccer match. The CPU controls the opposing team. Ties go to Sudden Death.</p>
+                
+                <h2>THE PEOPLE</h2>
+                <p><b>Elites (Solid Colors):</b> Your core 4 players (1 Goalie, 1 Anchor, 2 Roamers). They are immune to all damage and cannot be killed.<br>
+                <b>Reinforcements (Light Colors):</b> Spawned from your towers. They fight enemies but can be killed by towers or spectators. Attackers who score become Immune!<br>
+                <b>Spectators (Dark Colors):</b> Invade the pitch every 3 goals. They intelligently distribute (5-4-3-2-1 formation) to destroy towers, kill reinforcements, and push Elites.</p>
+
+                <h2>PURCHASE OPTIONS</h2>
+                <p><b>Push Tower ($50):</b> Fires pulses that knock back enemies and deal 1 damage to reinforcements.<br>
+                <b>Freeze Tower ($75):</b> Fires pulses that temporarily freeze enemies and deal heavy damage to reinforcements.<br>
+                <b>Artillery ($100):</b> Fires globally at enemy towers to destroy them. Cannot target players.<br>
+                <b>Defender Spawner ($150):</b> Spawns defensive reinforcements that guard your half of the field. (Limit 1).<br>
+                <b>Attacker Spawner ($200):</b> Spawns aggressive reinforcements that hunt enemies. (Limit 1).</p>
+
+                <h2>SPECIAL FUNCTIONS</h2>
+                <p><b>The Cavalry ($500):</b> Sends 30 of your spectators to swarm the pitch, instantly destroying enemy towers on contact. Ends after your team scores 3 goals.<br>
+                <b>Last Stand ($150):</b> Available only if the enemy scores 1 goal during their Cavalry run. Sends 30 of your spectators to wrestle the enemy's Cavalry.<br>
+                <b>Armageddon ($750):</b> Available if you trail by 7+ goals in the 2nd half. Ends the soccer match and starts a 30v30 spectator deathmatch. (Cost drops to $200 if trailing by 10+ in the final 30 seconds).</p>
+            </div>
+        </div>
+
+        <div id="goal-overlay" class="overlay hidden">
+            <h1 style="color: #ffeb3b; font-size: 8rem; margin: 0; text-shadow: 0 0 30px #000;">GOAL!</h1>
+            <div style="font-size: 3.5rem; font-weight: 900; background: rgba(0,0,0,0.5); padding: 10px 40px; border-radius: 15px;">
+                <span id="label-red" style="color: #ff5252;">RED: <span id="overlay-red">0</span></span>
+                <span style="color: #fff; margin: 0 30px;">-</span>
+                <span id="label-blue" style="color: #448aff;">BLUE: <span id="overlay-blue">0</span></span>
+            </div>
+        </div>
+
+        <div id="menu-break" class="overlay hidden">
+            <h1 id="break-title">HALFTIME</h1>
+            <button class="btn" onclick="startNextPeriod()">CONTINUE</button>
+        </div>
+
+        <div id="menu-armageddon" class="overlay hidden">
+            <h1 style="color: #ff1744; font-size: 5rem;">ARMAGEDDON</h1>
+            <h2 id="armageddon-msg" style="color: white;">PLAYER HAS DECLARED ARMAGEDDON</h2>
+            <button class="btn" onclick="startArmageddonFight()">CONTINUE</button>
+        </div>
+
+        <div id="menu-final" class="overlay hidden">
+            <h1 id="final-header">MATCH OVER</h1>
+            <h2 id="final-status">DRAW</h2>
+            <button class="btn" onclick="location.reload()">REPLAY</button>
+        </div>
+
+        <canvas id="stage" width="950" height="600"></canvas>
+    </div>
+
+    <div class="shop">
+        <button id="btn-push" onclick="setMode('push')">Push ($50)</button>
+        <button id="btn-freeze" onclick="setMode('freeze')">Freeze ($75)</button>
+        <button id="btn-artillery" onclick="setMode('artillery')">Artillery ($100)</button>
+        <button id="btn-def-spawn" onclick="setMode('def-spawn')">Def Spawner ($150)</button>
+        <button id="btn-atk-spawn" onclick="setMode('atk-spawn')">Atk Spawner ($200)</button>
+        <button id="btn-cavalry" onclick="buyCavalry()" style="background: #4a148c; color: white;">Cavalry ($500)</button>
+        <button id="btn-laststand" class="hidden" onclick="buyLastStand()" style="background: #bf360c; color: white;">Last Stand ($150)</button>
+        <button id="btn-armageddon" class="hidden" onclick="buyArmageddon()" style="background: #b71c1c; color: white;">ARMAGEDDON</button>
+    </div>
+
+<script>
+    const canvas = document.getElementById('stage');
+    const ctx = canvas.getContext('2d');
+    const W = 950, H = 600;
+    const GOAL_H = 180, P_RAD = 11, B_RAD = 9;
+    
+    const COSTS = { push: 50, freeze: 75, artillery: 100, 'def-spawn': 150, 'atk-spawn': 200, cavalry: 500, laststand: 150, armageddon: 750 };
+
+    let userTeam = 'blue', gameState = 'START';
+    let bGold = 150, rGold = 150, bScore = 0, rScore = 0;
+    let bGoalInterval = 0, rGoalInterval = 0;
+    let buildMode = null, players = [], towers = [], particles = [], spectators = [];
+    let ball = { x: W/2, y: H/2, vx: 0, vy: 0, lastTouch: null };
+    let frameCount = 0, currentHalfTime = 0, goalTimer = 0, armageddonTimer = 0;
+    let pendingInvasions = [];
+
+    let teamStates = {
+        red: { cavalry: false, lastStand: false, goalsInCavalry: 0 },
+        blue: { cavalry: false, lastStand: false, goalsInCavalry: 0 }
+    };
+
+    function showInstructions() { document.getElementById('menu-instructions').classList.remove('hidden'); }
+    function hideInstructions() { document.getElementById('menu-instructions').classList.add('hidden'); }
+
+    function selectTeam(t) {
+        userTeam = t;
+        document.getElementById('pick-red').classList.toggle('active', t === 'red');
+        document.getElementById('pick-blue').classList.toggle('active', t === 'blue');
+    }
+
+    class Player {
+        constructor(team, isNew = false, role = 'Elite', index = -1) {
+            this.team = team; this.isNew = isNew; this.role = role; this.index = index;
+            this.immune = !isNew || role === 'GK';
+            this.combatHits = 0; this.speed = isNew ? 1.4 : 1.6;
+            this.frozen = 0; this.kickCooldown = 0;
+            this.resetPosition();
+        }
+        resetPosition() {
+            if (this.role === 'GK') { this.x = (this.team === 'red') ? 35 : W - 35; this.y = H / 2; }
+            else if (this.index === 1) { this.x = (this.team === 'red') ? W * 0.15 : W * 0.85; this.y = H / 2; }
+            else if (this.index >= 2 && !this.isNew) {
+                const elitePos = [{x: 0.70, y: 0.25}, {x: 0.70, y: 0.75}];
+                let data = elitePos[this.index - 2];
+                this.x = (this.team === 'red') ? data.x * W : (1 - data.x) * W;
+                this.y = data.y * H;
+            } else { this.x = (this.team === 'red') ? W * 0.2 : W * 0.8; this.y = H / 2 + (Math.random() * 200 - 100); }
+        }
+        update() {
+            if (this.frozen > 0) { this.frozen--; return; }
+            if (this.kickCooldown > 0) this.kickCooldown--;
+
+            let targetX, targetY;
+            const ballDist = Math.hypot(this.x - ball.x, this.y - ball.y);
+            let oppTeam = this.team === 'red' ? 'blue' : 'red';
+            let currentSpeed = this.speed;
+
+            // ROLES
+            if (this.role === 'GK') {
+                const boxW = 85, boxH = 280;
+                const minX = (this.team === 'red' ? 10 : W - 10 - boxW);
+                const maxX = minX + boxW;
+                const minY = H/2 - boxH/2 + P_RAD, maxY = H/2 + boxH/2 - P_RAD;
+                
+                let danger = players.some(p => p.team === oppTeam && Math.hypot(p.x - ball.x, p.y - ball.y) < 80);
+                let ballInHalf = (this.team === 'red' ? ball.x < W/2 : ball.x > W/2);
+
+                let predictedY = ball.y + (ball.vy * 4); 
+                targetY = Math.max(minY, Math.min(maxY, predictedY));
+
+                if (ballInHalf) {
+                    if (danger && ballDist < 200) targetX = (this.team === 'red' ? 20 : W - 20);
+                    else if (!danger && ballDist < 200) targetX = Math.max(minX, Math.min(maxX, ball.x)); 
+                    else targetX = (this.team === 'red' ? 45 : W - 45); 
+                    
+                    let approaching = (this.team === 'red' && ball.vx < -2) || (this.team === 'blue' && ball.vx > 2);
+                    if (approaching && ballDist < 250) currentSpeed = 2.1; 
+                } else {
+                    targetX = (this.team === 'red' ? 65 : W - 65); 
+                }
+            } else if (this.role === 'Defender' && this.isNew) {
+                let intruder = players.find(p => p.team === oppTeam && (this.team === 'red' ? p.x < W*0.38 : p.x > W*0.62));
+                if (ballDist < 130) { targetX = ball.x; targetY = ball.y; }
+                else if (intruder) { targetX = intruder.x; targetY = intruder.y; }
+                else { targetX = (this.team === 'red' ? W*0.18 : W*0.82); targetY = this.y; }
+            } else if (this.index === 1) { // The Smart Anchor
+                let hasDefenders = players.some(p => p.team === this.team && p.role === 'Defender' && p.isNew);
+                let oppBoxLimit = (this.team === 'red' ? W/2 + 80 : W/2 - 80);
+                let midLine = W/2;
+                
+                if (hasDefenders) {
+                    targetX = (this.team === 'red' ? Math.max(90, Math.min(oppBoxLimit, ball.x)) : Math.min(W-90, Math.max(oppBoxLimit, ball.x)));
+                } else {
+                    let ballNearOppNet = (this.team === 'red' ? ball.x > W - 250 : ball.x < 250);
+                    let oppHasBall = ball.lastTouch && ball.lastTouch.team === oppTeam;
+                    
+                    if (ballNearOppNet && !oppHasBall) {
+                        targetX = (this.team === 'red' ? Math.max(90, Math.min(oppBoxLimit, ball.x)) : Math.min(W-90, Math.max(oppBoxLimit, ball.x)));
+                    } else {
+                        targetX = (this.team === 'red' ? Math.max(90, Math.min(midLine, ball.x)) : Math.min(W-90, Math.max(midLine, ball.x)));
+                    }
+                }
+                targetY = ball.y;
+            } else { // Attackers & Roamers
+                let myTeam = players.filter(p => p.team === this.team && p.role !== 'GK');
+                let closest = myTeam.sort((a,b) => Math.hypot(a.x-ball.x, a.y-ball.y) - Math.hypot(b.x-ball.x, b.y-ball.y))[0];
+                if (this.role === 'Attacker' && closest !== this) {
+                    let enemies = players.filter(p => p.team === oppTeam);
+                    if (enemies.length > 0) {
+                        if (!this.assignedEnemy || frameCount % 60 === 0 || !players.includes(this.assignedEnemy)) {
+                            this.assignedEnemy = enemies[Math.floor(Math.random() * enemies.length)];
+                        }
+                        targetX = this.assignedEnemy.x; targetY = this.assignedEnemy.y;
+                    } else { targetX = ball.x; targetY = ball.y; }
+                } else if (closest === this) { targetX = ball.x; targetY = ball.y; } 
+                else { targetX = ball.x + ((this.team === 'red' ? 1 : -1) * 140); targetY = (this.y < ball.y) ? ball.y - 110 : ball.y + 110; }
+            }
+
+            let d = Math.hypot(targetX - this.x, targetY - this.y) || 1;
+            this.x += (targetX - this.x)/d * currentSpeed;
+            this.y += (targetY - this.y)/d * currentSpeed;
+
+            // Combat
+            players.forEach((p, idx) => {
+                if (p.team !== this.team && Math.hypot(this.x - p.x, this.y - p.y) < P_RAD * 2.5) {
+                    if (this.role === 'Defender' || this.role === 'Attacker') {
+                        if (p.immune) { p.x += (p.x - this.x)*0.1; p.y += (p.y - this.y)*0.1; }
+                        else if (p.isNew) { p.combatHits += 0.025; if (p.combatHits >= 3) players.splice(idx, 1); }
+                    }
+                }
+            });
+
+            // Football IQ: Evasive Clearances, Passing, and Dribbling
+            if (ballDist < P_RAD + B_RAD && this.kickCooldown === 0) {
+                ball.lastTouch = this; 
+                const enemyGoalX = (this.team === 'red' ? W : 0);
+                const myGoalX = (this.team === 'red' ? 0 : W);
+                const distToEnemyGoal = Math.abs(this.x - enemyGoalX);
+                const distToMyGoal = Math.abs(this.x - myGoalX);
+
+                let enemiesNear = players.filter(p => p.team === oppTeam && Math.hypot(p.x - this.x, p.y - this.y) < 120);
+                let enemiesVeryNear = enemiesNear.filter(p => Math.hypot(p.x - this.x, p.y - this.y) < 60);
+
+                // 1. SMART CLEARANCE (Deep + Crowded)
+                if (distToMyGoal < 300 && enemiesNear.length >= 2) {
+                    this.kickCooldown = 35;
+                    let bestClearA = Math.atan2(H/2 - ball.y, enemyGoalX - ball.x);
+                    let maxFree = -1;
+                    
+                    for (let i = -5; i <= 5; i++) {
+                        let testA = Math.atan2(H/2 - ball.y, enemyGoalX - ball.x) + (i * 0.25);
+                        let testX = ball.x + Math.cos(testA)*800, testY = ball.y + Math.sin(testA)*800;
+                        let freeD = 800;
+                        
+                        players.forEach(p => {
+                            if (p.team === oppTeam && this.isInLane(p.x, p.y, ball.x, ball.y, testX, testY)) {
+                                let dL = Math.hypot(p.x - ball.x, p.y - ball.y);
+                                if (dL < freeD) freeD = dL;
+                            }
+                        });
+                        if (freeD > maxFree) { maxFree = freeD; bestClearA = testA; }
+                    }
+                    ball.vx = Math.cos(bestClearA) * 15; 
+                    ball.vy = Math.sin(bestClearA) * 15;
+                } 
+                // 2. PASSING OR SHOOTING
+                else if (enemiesVeryNear.length > 0 || distToEnemyGoal < 250) {
+                    this.kickCooldown = 25;
+                    const laneBlocked = players.some(p => p.team === oppTeam && this.isInLane(p.x, p.y, ball.x, ball.y, enemyGoalX, H/2));
+                    
+                    if (laneBlocked && distToEnemyGoal > 150) {
+                        let mates = players.filter(t => t.team === this.team && t !== this && (this.team === 'red' ? t.x > this.x : t.x < this.x));
+                        let openMates = mates.filter(m => !players.some(p => p.team === oppTeam && this.isInLane(p.x, p.y, ball.x, ball.y, m.x, m.y)));
+                        
+                        let targetMate = openMates.length > 0 ? openMates[Math.floor(Math.random()*openMates.length)] : (mates.length > 0 ? mates[Math.floor(Math.random()*mates.length)] : null);
+                        
+                        if (targetMate) {
+                            let a = Math.atan2(targetMate.y - ball.y, targetMate.x - ball.x);
+                            ball.vx = Math.cos(a) * 9; ball.vy = Math.sin(a) * 9; 
+                            return;
+                        }
+                    }
+                    
+                    // Smart Shoot
+                    let bestShootA = Math.atan2(H/2 - ball.y, enemyGoalX - ball.x);
+                    let maxFreeD = -1;
+                    for(let i = -1; i <= 1; i++) { 
+                        let testY = H/2 + (i * 60);
+                        let testA = Math.atan2(testY - ball.y, enemyGoalX - ball.x);
+                        let testX = ball.x + Math.cos(testA)*800, testYRay = ball.y + Math.sin(testA)*800;
+                        let freeD = 800;
+                        players.forEach(p => {
+                            if (p.team === oppTeam && this.isInLane(p.x, p.y, ball.x, ball.y, testX, testYRay)) {
+                                let dL = Math.hypot(p.x - ball.x, p.y - ball.y);
+                                if (dL < freeD) freeD = dL;
+                            }
+                        });
+                        if (freeD > maxFreeD) { maxFreeD = freeD; bestShootA = testA; }
+                    }
+                    ball.vx = Math.cos(bestShootA) * 10; ball.vy = Math.sin(bestShootA) * 10;
+                } 
+                // 3. DRIBBLING (Open space)
+                else {
+                    this.kickCooldown = 15;
+                    let a = Math.atan2(H/2 - ball.y, enemyGoalX - ball.x);
+                    ball.vx = Math.cos(a) * 4.5; 
+                    ball.vy = Math.sin(a) * 4.5;
+                }
+            }
+            
+            // Constrain Box
+            if (this.role === 'GK') {
+                const boxW = 85, boxH = 280;
+                const minX = (this.team === 'red' ? 10 : W - 10 - boxW);
+                const maxX = minX + boxW;
+                const minY = H/2 - boxH/2 + P_RAD, maxY = H/2 + boxH/2 - P_RAD;
+                this.x = Math.max(minX, Math.min(maxX, this.x));
+                this.y = Math.max(minY, Math.min(maxY, this.y));
+            } else {
+                this.x = Math.max(P_RAD, Math.min(W - P_RAD, this.x));
+                this.y = Math.max(P_RAD, Math.min(H - P_RAD, this.y));
+            }
+        }
+        isInLane(px, py, x1, y1, x2, y2) {
+            let ld = Math.abs((y2-y1)*px - (x2-x1)*py + x2*y1 - y2*x1) / (Math.hypot(y2-y1, x2-x1) || 1);
+            if (ld > 35) return false;
+            let dot = (px-x1)*(x2-x1) + (py-y1)*(y2-y1);
+            return dot > 0 && dot < Math.pow(Math.hypot(x2-x1, y2-y1), 2);
+        }
+        draw() {
+            ctx.beginPath(); ctx.arc(this.x, this.y, P_RAD, 0, Math.PI*2);
+            ctx.fillStyle = this.team === 'red' ? (this.isNew ? '#ffaaaa' : '#ff5252') : (this.isNew ? '#99ccff' : '#448aff');
+            ctx.fill();
+            ctx.strokeStyle = this.frozen > 0 ? '#00e5ff' : '#fff';
+            ctx.lineWidth = (this.immune) ? 3 : 1; ctx.stroke();
+        }
+    }
+
+    class Spectator {
+        constructor(team, index, side) {
+            this.team = team; this.side = side; this.index = index;
+            this.hp = 5; this.resetPos();
+            this.state = 'idling'; this.timer = 0; this.assignedTarget = null;
+        }
+        resetPos() {
+            this.originX = 30 + (this.index % 15) * 63;
+            this.originY = (this.side === 'top') ? 15 : H - 15;
+            this.x = this.originX; this.y = this.originY;
+        }
+        update() {
+            if (gameState === 'ARMAGEDDON_WAR') {
+                if (armageddonTimer < 300) return;
+                let enemies = spectators.filter(s => s.team !== this.team);
+                let target = enemies.sort((a,b) => Math.hypot(this.x-a.x, this.y-a.y) - Math.hypot(this.x-b.x, this.y-b.y))[0];
+                if (target) {
+                    let d = Math.hypot(target.x - this.x, target.y - this.y) || 1;
+                    this.x += (target.x - this.x)/d * 2.5; this.y += (target.y - this.y)/d * 2.5;
+                    if (d < 15) { target.hp -= 0.05; if (target.hp <= 0) spectators.splice(spectators.indexOf(target), 1); }
+                }
+                return;
+            }
+
+            const sObj = teamStates[this.team];
+            if (this.state === 'swarming') {
+                this.timer++;
+                let enemyTeam = (this.team === 'red' ? 'blue' : 'red');
+                let isCavalry = sObj.cavalry, isLastStand = sObj.lastStand;
+
+                if ((isCavalry || isLastStand) && Math.hypot(this.x - ball.x, this.y - ball.y) < 30) {
+                    const goalX = (this.team === 'red' ? W : 0);
+                    ball.vx = Math.cos(Math.atan2(H/2-ball.y, goalX-ball.x)) * 12;
+                    ball.vy = Math.sin(Math.atan2(H/2-ball.y, goalX-ball.x)) * 12;
+                }
+
+                let speed = isCavalry ? 3.5 : 2.0;
+                let dmg = isCavalry ? 1.0 : 0.01;
+
+                if (isLastStand) {
+                    let enemies = spectators.filter(s => s.team === enemyTeam && s.state === 'swarming');
+                    this.assignedTarget = enemies.sort((a,b) => Math.hypot(this.x-a.x, this.y-a.y) - Math.hypot(this.x-b.x, this.y-b.y))[0];
+                } else if (isCavalry) {
+                    if (!this.assignedTarget || this.timer % 60 === 0) {
+                        let targets = [...towers.filter(t => t.team === enemyTeam), ...players.filter(p => p.team === enemyTeam)];
+                        if (targets.length > 0) this.assignedTarget = targets[this.index % targets.length];
+                    }
+                } else {
+                    // 5-4-3-2-1 Formation Targeting
+                    if (!this.assignedTarget || this.timer % 60 === 0) {
+                        let eT = towers.filter(t => t.team === enemyTeam);
+                        let eP = players.filter(p => p.team === enemyTeam);
+                        
+                        let c_spawners = eT.filter(t => t.type.includes('spawn'));
+                        let c_arty = eT.filter(t => t.type === 'artillery');
+                        let c_gk = eP.filter(p => p.role === 'GK');
+                        let c_reinf = eP.filter(p => p.isNew);
+                        let c_basic = eT.filter(t => t.type === 'freeze' || t.type === 'push');
+
+                        let allCats = [c_spawners, c_arty, c_gk, c_reinf, c_basic].filter(c => c.length > 0);
+                        
+                        if (allCats.length > 0) {
+                            let catIndex = 0, idx = this.index % 15;
+                            if (idx < 5) catIndex = 0;
+                            else if (idx < 9) catIndex = 1;
+                            else if (idx < 12) catIndex = 2;
+                            else if (idx < 14) catIndex = 3;
+                            else catIndex = 4;
+                            
+                            let pool = allCats[catIndex % allCats.length];
+                            this.assignedTarget = pool[this.index % pool.length];
+                        }
+                    }
+                }
+
+                if (this.assignedTarget) {
+                    let d = Math.hypot(this.assignedTarget.x - this.x, this.assignedTarget.y - this.y) || 1;
+                    this.x += (this.assignedTarget.x - this.x)/d * speed; this.y += (this.assignedTarget.y - this.y)/d * speed;
+                    if (d < 20) {
+                        if (this.assignedTarget instanceof Tower && towers.includes(this.assignedTarget)) {
+                            if (isCavalry) towers.splice(towers.indexOf(this.assignedTarget), 1);
+                            else { this.assignedTarget.specHits += dmg; if (this.assignedTarget.specHits >= 5) towers.splice(towers.indexOf(this.assignedTarget), 1); }
+                        } else if (this.assignedTarget instanceof Player && players.includes(this.assignedTarget)) {
+                            if (this.assignedTarget.immune) { this.assignedTarget.x += (this.assignedTarget.x - this.x)*(isCavalry ? 0.6 : 0.1); this.assignedTarget.y += (this.assignedTarget.y - this.y)*(isCavalry ? 0.6 : 0.1); }
+                            else { if(isCavalry) players.splice(players.indexOf(this.assignedTarget),1); else { this.assignedTarget.combatHits += dmg; if(this.assignedTarget.combatHits >= 3) players.splice(players.indexOf(this.assignedTarget),1); } }
+                        } else if (isLastStand && this.assignedTarget instanceof Spectator) {
+                            this.assignedTarget.x += (this.x - this.assignedTarget.x)*0.25; this.assignedTarget.y += (this.y - this.assignedTarget.y)*0.25;
+                        }
+                    }
+                }
+                if (!isCavalry && !isLastStand && this.timer > 600) this.state = 'returning';
+            } else if (this.state === 'returning') {
+                let d = Math.hypot(this.originX - this.x, this.originY - this.y);
+                if (d < 5) { this.state = 'idling'; this.x = this.originX; this.y = this.originY; }
+                else { this.x += (this.originX - this.x)/d * 4.5; this.y += (this.originY - this.y)/d * 4.5; }
+            }
+        }
+        draw() {
+            ctx.beginPath(); ctx.arc(this.x, this.y, 7, 0, Math.PI*2);
+            ctx.fillStyle = (this.team === 'red') ? '#800000' : '#000080';
+            ctx.fill();
+            if (teamStates[this.team].cavalry || teamStates[this.team].lastStand) { ctx.strokeStyle = "#fff"; ctx.lineWidth = 2; ctx.stroke(); }
+        }
+    }
+
+    class Tower {
+        constructor(x, y, type, team) { this.x = x; this.y = y; this.type = type; this.team = team; this.timer = 0; this.specHits = 0; this.hp = (type==='push')?1 : (type==='artillery')?3 : 2; }
+        update() {
+            this.timer++;
+            if (this.type.includes('spawn')) {
+                if (this.timer >= 900 && players.filter(p => p.team === this.team && p.role !== 'GK').length < 10) {
+                    players.push(new Player(this.team, true, this.type === 'def-spawn' ? 'Defender' : 'Attacker'));
+                    this.timer = 0;
+                }
+            } else if (this.type === 'artillery') {
+                if (this.timer >= 200) {
+                    let targets = towers.filter(t => t.team !== this.team).sort((a,b) => Math.hypot(this.x-a.x, this.y-a.y) - Math.hypot(this.x-b.x, this.y-b.y));
+                    if (targets[0]) { particles.push(new Projectile(this.x, this.y, targets[0], 'artillery', this.team)); this.timer = 0; }
+                }
+            } else {
+                let cd = (this.type === 'push' ? 70 : 130);
+                if (this.timer >= cd) {
+                    let enemy = players.find(p => p.team !== this.team && Math.hypot(p.x - this.x, p.y - this.y) < 220);
+                    if (enemy) { particles.push(new Projectile(this.x, this.y, enemy, this.type, this.team)); this.timer = 0; }
+                }
+            }
+        }
+        draw() {
+            ctx.save(); ctx.translate(this.x, this.y);
+            ctx.fillStyle = this.type === 'push' ? '#ffeb3b' : this.type === 'freeze' ? '#00e5ff' : this.type.includes('spawn') ? '#e040fb' : '#ff5722';
+            ctx.strokeStyle = (this.team === 'red') ? '#ff5252' : '#448aff'; ctx.lineWidth = 3;
+            if (this.type.includes('spawn')) { ctx.beginPath(); ctx.arc(0, 0, 14, 0, Math.PI*2); ctx.fill(); ctx.stroke(); }
+            else if (this.type === 'artillery') { ctx.beginPath(); ctx.moveTo(0,-15); ctx.lineTo(15,15); ctx.lineTo(-15,15); ctx.closePath(); ctx.fill(); ctx.stroke(); }
+            else { ctx.fillRect(-12, -12, 24, 24); ctx.strokeRect(-12, -12, 24, 24); }
+            ctx.restore();
+        }
+    }
+
+    class Projectile {
+        constructor(x, y, target, type, team) {
+            let angle = Math.atan2(target.y - y, target.x - x);
+            this.x = x; this.y = y; this.type = type; this.team = team; this.vx = Math.cos(angle)*12; this.vy = Math.sin(angle)*12; this.life = 180; this.targetTower = (type === 'artillery') ? target : null;
+        }
+        update() {
+            this.x += this.vx; this.y += this.vy; this.life--;
+            if (this.type === 'artillery') {
+                if (this.targetTower && towers.includes(this.targetTower) && Math.hypot(this.x - this.targetTower.x, this.y - this.targetTower.y) < 20) {
+                    this.targetTower.hp--; if(this.targetTower.hp <= 0) towers.splice(towers.indexOf(this.targetTower), 1);
+                    this.life = 0;
+                }
+            } else {
+                players.forEach((p, idx) => {
+                    if (p.team !== this.team && Math.hypot(this.x - p.x, this.y - p.y) < P_RAD+5) {
+                        if (this.type === 'push') { p.pushHits++; p.x += this.vx*4; }
+                        else { p.freezeHits++; p.frozen = 120; }
+                        if (p.isNew && (p.pushHits >= 5 || p.freezeHits >= 3)) players.splice(idx, 1);
+                        this.life = 0;
+                    }
+                });
+            }
+        }
+        draw() { ctx.beginPath(); ctx.arc(this.x, this.y, 6, 0, Math.PI*2); ctx.fillStyle = (this.type==='artillery')?'#fff':(this.type==='push'?'#ffeb3b':'#00e5ff'); ctx.fill(); }
+    }
+
+    function initGame() {
+        document.getElementById('menu-start').classList.add('hidden');
+        gameState = 'P1'; bGold = 150; rGold = 150; bScore = 0; rScore = 0; bGoalInterval = 0; rGoalInterval = 0; frameCount = 0; currentHalfTime = 0;
+        players = [];
+        for(let i=0; i<4; i++) { players.push(new Player('red', false, i === 0 ? 'GK' : 'Elite', i)); players.push(new Player('blue', false, i === 0 ? 'GK' : 'Elite', i)); }
+        createSpecs(15); towers = []; particles = []; resetBall(); loop();
+    }
+
+    function createSpecs(num) {
+        let oldStates = spectators.map(s => ({t: s.team, st: s.state, idx: s.index}));
+        spectators = [];
+        for(let i=0; i<num; i++) {
+            let rs = new Spectator('red', i, 'top'), bs = new Spectator('blue', i, 'bottom');
+            if(oldStates.find(x => x.t === 'red' && x.idx === i && x.st === 'swarming')) rs.state = 'swarming';
+            if(oldStates.find(x => x.t === 'blue' && x.idx === i && x.st === 'swarming')) bs.state = 'swarming';
+            spectators.push(rs, bs);
+        }
+    }
+
+    function addExtraSpectators(team) {
+        let count = spectators.filter(s => s.team === team).length;
+        if (count < 30) {
+            let side = (team === 'red') ? 'top' : 'bottom';
+            for(let i=15; i<30; i++) { let s = new Spectator(team, i, side); s.state = 'swarming'; spectators.push(s); }
+        }
+    }
+
+    function removeExtraSpectators(team) { spectators = spectators.filter(s => !(s.team === team && s.index >= 15)); }
+
+    function buyCavalry() {
+        let gold = userTeam === 'blue' ? bGold : rGold;
+        if (gold >= COSTS.cavalry && !teamStates[userTeam].cavalry) {
+            if (userTeam === 'blue') bGold -= COSTS.cavalry; else rGold -= COSTS.cavalry;
+            teamStates[userTeam].cavalry = true; teamStates[userTeam].goalsInCavalry = 0;
+            addExtraSpectators(userTeam);
+            spectators.filter(s => s.team === userTeam).forEach(s => { s.state = 'swarming'; s.timer = 0; });
+        }
+    }
+
+    function buyLastStand() {
+        let gold = userTeam === 'blue' ? bGold : rGold;
+        if (gold >= COSTS.laststand && !teamStates[userTeam].lastStand) {
+            if (userTeam === 'blue') bGold -= COSTS.laststand; else rGold -= COSTS.laststand;
+            teamStates[userTeam].lastStand = true; 
+            addExtraSpectators(userTeam);
+            spectators.filter(s => s.team === userTeam).forEach(s => { s.state = 'swarming'; s.timer = 0; });
+        }
+    }
+
+    function buyArmageddon() {
+        let c = getArmageddonCost();
+        if ((userTeam === 'blue' ? bGold : rGold) >= c) {
+            if (userTeam === 'blue') bGold -= c; else rGold -= c;
+            gameState = 'ARMAGEDDON_PREP';
+            document.getElementById('armageddon-msg').innerText = userTeam.toUpperCase() + " HAS DECLARED ARMAGEDDON";
+            document.getElementById('menu-armageddon').classList.remove('hidden');
+        }
+    }
+
+    function getArmageddonCost() {
+        const diff = userTeam === 'blue' ? rScore - bScore : bScore - rScore;
+        const late = (gameState === 'P2' && currentHalfTime >= 5400); 
+        return (diff >= 10 && late) ? 200 : 750;
+    }
+
+    function startArmageddonFight() {
+        document.getElementById('menu-armageddon').classList.add('hidden');
+        gameState = 'ARMAGEDDON_WAR';
+        players = []; towers = []; particles = []; createSpecs(30); armageddonTimer = 0;
+        spectators.forEach(s => { s.x = s.team === 'red' ? W*0.1 : W*0.9; s.y = Math.random()*H; s.state = 'swarming'; s.timer = 99999; });
+    }
+
+    function handleGoal(team) {
+        const isB = (team === 'BLUE');
+        let tScore = isB ? bScore + 1 : rScore + 1;
+        if(isB) { bScore++; bGoalInterval++; } else { rScore++; rGoalInterval++; }
+        
+        let bonus = 100;
+        if (tScore === 1) bonus = 200;
+        else if (tScore % 5 === 0 && tScore > 0) bonus = 100 + 100 * (tScore / 5);
+        if (isB) bGold += bonus; else rGold += bonus;
+
+        if (isB && bGoalInterval % 3 === 0) pendingInvasions.push('red');
+        if (!isB && rGoalInterval % 3 === 0) pendingInvasions.push('blue');
+
+        if (teamStates.blue.cavalry && isB) teamStates.blue.goalsInCavalry++;
+        if (teamStates.red.cavalry && !isB) teamStates.red.goalsInCavalry++;
+
+        if (ball.lastTouch && ball.lastTouch.role === 'Attacker' && ball.lastTouch.team.toUpperCase() === team) { ball.lastTouch.isNew = false; ball.lastTouch.immune = true; }
+        
+        ['red','blue'].forEach(t => {
+            if (teamStates[t].cavalry && teamStates[t].goalsInCavalry >= 3) {
+                teamStates[t].cavalry = false; teamStates[t].lastStand = false;
+                spectators.filter(s => s.team === t).forEach(s => s.state = 'returning');
+                removeExtraSpectators(t);
+                let opp = t === 'red' ? 'blue' : 'red';
+                if (teamStates[opp].lastStand) {
+                    teamStates[opp].lastStand = false;
+                    spectators.filter(s => s.team === opp).forEach(s => s.state = 'returning');
+                    removeExtraSpectators(opp);
+                }
+            }
+        });
+
+        document.getElementById('bug-blue-score').innerText = bScore; document.getElementById('bug-red-score').innerText = rScore;
+        document.getElementById('overlay-red').innerText = rScore; document.getElementById('overlay-blue').innerText = bScore;
+        document.getElementById('goal-overlay').classList.remove('hidden');
+        players.forEach(p => p.resetPosition()); goalTimer = 180; 
+    }
+
+    function triggerInvasion(team) { spectators.filter(s => s.team === team && s.index < 15).forEach(s => { s.state = 'swarming'; s.timer = 0; }); }
+
+    function handlePeriodEnd() {
+        if (gameState === 'P1') { 
+            gameState = 'BREAK'; document.getElementById('menu-break').classList.remove('hidden'); 
+            players.forEach(p => p.resetPosition());
+            spectators.filter(s => s.state === 'swarming').forEach(s => s.state = 'returning');
+        }
+        else if (gameState === 'P2') { 
+            if (rScore === bScore) { gameState = 'BREAK'; document.getElementById('break-title').innerText = "SUDDEN DEATH"; document.getElementById('menu-break').classList.remove('hidden'); } 
+            else finishGame(); 
+        }
+    }
+
+    function startNextPeriod() { document.getElementById('menu-break').classList.add('hidden'); gameState = (rScore === bScore && frameCount >= 14400) ? 'SUDDEN' : 'P2'; currentHalfTime = 0; frameCount = (gameState === 'P2') ? 7200 : 0; resetBall(); }
+
+    function update() {
+        if (gameState === 'ARMAGEDDON_WAR') {
+            armageddonTimer++; spectators.forEach(s => s.update());
+            if (spectators.length > 0) {
+                let rL = spectators.some(s => s.team === 'red'); let bL = spectators.some(s => s.team === 'blue');
+                if (!rL || !bL) finishGame(rL ? "RED" : "BLUE");
+            }
+            return;
+        }
+
+        if (players.filter(p => p.immune).length < 8) {
+            ['red','blue'].forEach(t => {
+                if (players.filter(p => p.team === t && p.immune).length < 4) {
+                    for(let i=0; i<4; i++) { if (!players.find(p => p.team === t && p.index === i && p.immune)) players.push(new Player(t, false, i === 0 ? 'GK' : 'Elite', i)); }
+                }
+            });
+        }
+
+        frameCount++; currentHalfTime++;
+        if (currentHalfTime >= 7200 && gameState !== 'SUDDEN') handlePeriodEnd();
+
+        ball.x += ball.vx; ball.y += ball.vy; ball.vx *= 0.985; ball.vy *= 0.985;
+        if (ball.y < B_RAD + 40 || ball.y > H - B_RAD - 40) { ball.vy *= -1.2; ball.y = ball.y < B_RAD+40 ? B_RAD+40 : H - B_RAD-40; }
+        const inG = (ball.y > H/2 - GOAL_H/2 && ball.y < H/2 + GOAL_H/2);
+        if (ball.x < 15) { if (inG) { handleGoal('BLUE'); resetBall(); if(gameState === 'SUDDEN') finishGame(); } else { ball.vx *= -1.2; ball.x = 20; } }
+        if (ball.x > W-15) { if (inG) { handleGoal('RED'); resetBall(); if(gameState === 'SUDDEN') finishGame(); } else { ball.vx *= -1.2; ball.x = W - 20; } }
+
+        players.forEach(p => p.update()); towers.forEach(t => t.update());
+        particles = particles.filter(p => p.life > 0); particles.forEach(p => p.update());
+        spectators.forEach(s => s.update());
+        
+        bGold += 0.02; rGold += 0.02; updateUI();
+
+        // CPU Logic
+        let cpu = userTeam === 'blue' ? 'red' : 'blue';
+        let cpuG = cpu === 'red' ? rGold : bGold;
+        if (Math.random() < 0.01) {
+            const cpuS = cpu === 'red' ? rScore : bScore, oppS = cpu === 'red' ? bScore : rScore;
+            const diff = oppS - cpuS;
+            const armCost = (diff >= 10 && currentHalfTime >= 5400) ? 200 : 750;
+
+            if (gameState === 'P2' && diff >= 7 && cpuG >= armCost) { buyArmageddonAsCPU(cpu, armCost); return; }
+            if (teamStates[userTeam].cavalry && teamStates[userTeam].goalsInCavalry >= 1 && cpuG >= 150) { buyLastStandAsCPU(cpu); return; }
+            if (diff >= 3 && !teamStates[cpu].cavalry && cpuG >= 500) { buyCavalryAsCPU(cpu); return; }
+
+            let oppTowers = towers.filter(t => t.team === userTeam);
+            let oppSpawners = oppTowers.filter(t => t.type.includes('spawn'));
+            let rand = Math.random();
+
+            if (oppSpawners.length > 0 && rand < 0.6 && cpuG >= 100) buildTowerCPU(cpu, 'artillery');
+            else if (oppTowers.length > 0 && rand < 0.2 && cpuG >= 100) buildTowerCPU(cpu, 'artillery');
+            else {
+                let sLimit = towers.some(t => t.team === cpu && t.type === 'def-spawn') && towers.some(t => t.team === cpu && t.type === 'atk-spawn');
+                let type = !sLimit ? (Math.random() > 0.5 ? 'def-spawn' : 'atk-spawn') : (Math.random() > 0.5 ? 'push' : 'freeze');
+                if(cpuG >= COSTS[type]) buildTowerCPU(cpu, type);
+            }
+        }
+    }
+
+    function buyArmageddonAsCPU(t, cost) { if(t==='red') rGold -= cost; else bGold -= cost; gameState='ARMAGEDDON_PREP'; document.getElementById('menu-armageddon').classList.remove('hidden'); document.getElementById('armageddon-msg').innerText="CPU DECLARED ARMAGEDDON"; }
+    function buyCavalryAsCPU(t) { if(t==='red') rGold -= 500; else bGold -= 500; teamStates[t].cavalry=true; teamStates[t].goalsInCavalry=0; addExtraSpectators(t); spectators.filter(s=>s.team===t).forEach(s=>{s.state='swarming'; s.timer=0;}); }
+    function buyLastStandAsCPU(t) { if(t==='red') rGold -= 150; else bGold -= 150; teamStates[t].lastStand=true; addExtraSpectators(t); spectators.filter(s=>s.team===t).forEach(s=>{s.state='swarming'; s.timer=0;}); }
+    function buildTowerCPU(team, type) {
+        if (type.includes('spawn') && towers.some(t => t.team === team && t.type === type)) return;
+        let tx = team === 'red' ? Math.random()*W*0.4 : W - Math.random()*W*0.4;
+        towers.push(new Tower(tx, 100+Math.random()*400, type, team));
+        if (team === 'red') rGold -= COSTS[type]; else bGold -= COSTS[type];
+    }
+
+    function updateUI() {
+        document.getElementById('blue-gold').innerText = Math.floor(bGold);
+        document.getElementById('red-gold').innerText = Math.floor(rGold);
+        let myG = userTeam === 'blue' ? bGold : rGold;
+        for (let k in COSTS) { 
+            let btn = document.getElementById('btn-'+k); 
+            if(btn) {
+                let limit = k.includes('spawn') && towers.some(t => t.team === userTeam && t.type === k);
+                if (limit) btn.className = 'limit-reached';
+                else btn.className = myG >= COSTS[k] ? 'afford' : 'broke';
+                if (buildMode === k) btn.classList.add(userTeam === 'blue' ? 'active-blue' : 'active-red');
+            } 
+        }
+        
+        let totalSecs = Math.floor((frameCount / 7200) * 45 * 60);
+        document.getElementById('clock-display').innerText = gameState === 'SUDDEN' ? "SUDDEN DEATH" : `${Math.floor(totalSecs/60).toString().padStart(2,'0')}:${(totalSecs%60).toString().padStart(2,'0')}`;
+
+        let opp = userTeam === 'blue' ? 'red' : 'blue';
+        document.getElementById('btn-laststand').className = (teamStates[opp].cavalry && teamStates[opp].goalsInCavalry >= 1) ? "btn afford" : "hidden";
+        const diff = userTeam === 'blue' ? rScore - bScore : bScore - rScore;
+        const armAvail = (gameState === 'P2' && diff >= 7) || (diff >= 10 && currentHalfTime >= 5400);
+        document.getElementById('btn-armageddon').className = armAvail ? "btn afford" : "hidden";
+        document.getElementById('btn-armageddon').innerText = `ARMAGEDDON ($${getArmageddonCost()})`;
+    }
+
+    function finishGame(win = null) {
+        gameState = 'END'; document.getElementById('menu-final').classList.remove('hidden');
+        if (win) { document.getElementById('final-header').innerText = win + " WON ARMAGEDDON"; document.getElementById('final-status').innerText = ""; }
+        else document.getElementById('final-status').innerText = rScore > bScore ? "RED WINS " + rScore + "-" + bScore : "BLUE WINS " + bScore + "-" + rScore;
+    }
+
+    function loop() { 
+        if (goalTimer > 0) {
+            goalTimer--; if (goalTimer <= 0) { document.getElementById('goal-overlay').classList.add('hidden'); while(pendingInvasions.length > 0) triggerInvasion(pendingInvasions.shift()); }
+        } else if (gameState !== 'START' && gameState !== 'BREAK' && gameState !== 'END' && gameState !== 'ARMAGEDDON_PREP') update(); draw(); requestAnimationFrame(loop); 
+    }
+
+    function resetBall() { ball = { x: W/2, y: H/2, vx: (Math.random()-0.5)*10, vy: (Math.random()-0.5)*10, lastTouch: null }; }
+    function setMode(m) { if (m.includes('spawn') && towers.some(t => t.team === userTeam && t.type === m)) return; buildMode = buildMode === m ? null : m; }
+    
+    canvas.addEventListener('mousedown', (e) => {
+        const r = canvas.getBoundingClientRect(); const mx = e.clientX - r.left, my = e.clientY - r.top;
+        let myG = userTeam === 'blue' ? bGold : rGold;
+        if (buildMode && myG >= COSTS[buildMode]) {
+            if (userTeam === 'blue' && mx < W/2) return; if (userTeam === 'red' && mx > W/2) return;
+            if (buildMode.includes('spawn') && towers.some(t => t.team === userTeam && t.type === buildMode)) return;
+            towers.push(new Tower(mx, my, buildMode, userTeam)); if(userTeam==='blue') bGold-=COSTS[buildMode]; else rGold-=COSTS[buildMode];
+        }
+    });
+
+    function draw() {
+        ctx.fillStyle = '#163d1b'; ctx.fillRect(0, 0, W, H);
+        ctx.strokeStyle = 'rgba(255,255,255,0.2)'; ctx.lineWidth = 3;
+        ctx.strokeRect(10, 40, W-20, H-80); ctx.beginPath(); ctx.moveTo(W/2, 40); ctx.lineTo(W/2, H-40); ctx.stroke();
+        ctx.beginPath(); ctx.arc(W/2, H/2, 70, 0, Math.PI*2); ctx.stroke();
+        ctx.strokeRect(10, H/2-140, 60, 280); ctx.strokeRect(W-70, H/2-140, 60, 280);
+        
+        if (gameState !== 'ARMAGEDDON_WAR' && gameState !== 'START') {
+            ctx.fillStyle = userTeam === 'blue' ? 'rgba(68,138,255,0.05)' : 'rgba(255,82,82,0.05)';
+            ctx.fillRect(userTeam === 'blue' ? W/2 : 10, 40, W/2 - 10, H-80);
+        } else if (armageddonTimer < 300 && gameState === 'ARMAGEDDON_WAR') {
+            ctx.fillStyle = "white"; ctx.font = "bold 100px Arial"; ctx.textAlign = "center";
+            ctx.fillText(Math.ceil((300-armageddonTimer)/60), W/2, H/2);
+        }
+        towers.forEach(t => t.draw()); players.forEach(p => p.draw()); particles.forEach(p => p.draw()); spectators.forEach(s => s.draw());
+        if (gameState !== 'ARMAGEDDON_WAR' && gameState !== 'START') { ctx.beginPath(); ctx.arc(ball.x, ball.y, B_RAD, 0, Math.PI*2); ctx.fillStyle = '#fff'; ctx.fill(); ctx.stroke(); }
+    }
+</script>
+</body>
+</html>
